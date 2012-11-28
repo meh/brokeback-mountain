@@ -9,21 +9,21 @@ handle(Req, Loop) ->
   BReq = {brokeback_req, self()},
   process_flag(trap_exit, true),
   spawn_link(fun() -> Loop(BReq) end),
-  loop(Req).
+  loop(Req, Loop).
 
-loop(Req) ->
+loop(Req, Loop) ->
   receive
     {uri, Pid} ->
       {Uri, _} = cowboy_req:method(Req),
       Pid ! {uri, Uri},
-      loop(Req);
+      loop(Req, Loop);
     {response, Code, Headers, Body} ->
       {ok, Req2} = cowboy_req:reply(Code, Headers, Body, Req),
-      loop(Req2);
+      loop(Req2, Loop);
     {'EXIT', _, normal} ->
-      {ok, Req};
+      {ok, Req, Loop};
     {'EXIT', _, Reason} ->
-      {error, Reason}
+      {error, Reason, Loop}
   end.
 
 terminate(_, _) ->
