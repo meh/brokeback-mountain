@@ -8,11 +8,11 @@ respond(HttpCode, Req) ->
 respond(HttpCode, Body, Req) ->
   respond(HttpCode, [], Body, Req).
 respond(HttpCode, Headers, Body, {brokeback_req, Pid}) ->
-  Pid ! {response, HttpCode, convert_headers(Headers), to_bin(Body)},
-  ok.
-respond(HttpCode, Headers, Template, Vars, {brokeback_req, Pid}) ->
-  Pid ! {response, HttpCode, convert_headers(Headers), to_bin(io_lib:format(Template, Vars))},
-  ok.
+  {ok, Req2} = cowboy_req:reply(HttpCode, convert_headers(Headers),
+    to_bin(Body), get_request(Pid)),
+  set_request(Pid, Req2).
+respond(HttpCode, Headers, Template, Vars, Req) ->
+  respond(HttpCode, Headers, io_lib:format(Template, Vars), Req).
 
 ok(Body, Req) ->
   ok([], Body, Req).
@@ -27,30 +27,43 @@ redirect(permanent, Url, Req) ->
   respond(301, [{'Location', Url}], "", Req).
 
 resource(Options, {brokeback_req, Pid}) when is_list(Options) ->
-  Pid ! {uri, self()},
+  {Path, _} = cowboy_req:path(get_request(Pid)),
+  [lists:foldl(fun clean_uri/2, P, Options) || P <- split_path(Path)].
+
+get_request(Pid) ->
+  Pid ! {get, self()},
   receive
-    {uri, Uri} ->
-      [ [ clean_uri(S, P) || S <- Options] || P <- split_path(Uri)]
+    {request, Req} ->
+      Req
   end.
 
-split_path(<<$/, Path/bits>>) ->
-  split_path(Path, []);
-split_path(<<Path/bits>>) ->
-  split_path(Path, []).
+set_request(Pid, Req) ->
+  Pid ! {set, Req},
+  ok.
+
+skip_slashes(<<$/, Rest/bits>>) ->
+  skip_slashes(Rest);
+skip_slashes(Rest) ->
+  Rest.
+
+split_path(Path) when is_binary(Path) ->
+  split_path(skip_slashes(Path), []).
 
 split_path(Path, Acc) ->
   case binary:match(Path, <<"/">>) of
     nomatch when Path =:= <<>> ->
-      lists:reverse([cowboy_http:urldecode(S) || S <- Acc]);
+      lists:reverse([binary_to_list(S) || S <- Acc]);
     nomatch ->
-      lists:reverse([cowboy_http:urldecode(S) || S <- [Path|Acc]]);
+      lists:reverse([binary_to_list(S) || S <- [Path|Acc]]);
     {Pos, _} ->
       <<Segment:Pos/binary, _:8, Rest/bits>> = Path,
-      split_path(Rest, [Segment|Acc])
+      split_path(skip_slashes(Rest), [Segment|Acc])
   end.
 
 clean_uri(lowercase, Uri) ->
   string:to_lower(Uri);
+clean_uri(urldecode, Uri) ->
+  binary_to_list(cowboy_http:urldecode(list_to_binary(Uri)));
 clean_uri(_Unavailable, Uri) ->
   Uri.
 

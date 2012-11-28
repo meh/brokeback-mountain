@@ -13,12 +13,10 @@ handle(Req, Loop) ->
 
 loop(Req, Loop) ->
   receive
-    {uri, Pid} ->
-      {Uri, _} = cowboy_req:method(Req),
-      Pid ! {uri, Uri},
+    {get, Pid} ->
+      Pid ! {request, Req},
       loop(Req, Loop);
-    {response, Code, Headers, Body} ->
-      {ok, Req2} = cowboy_req:reply(Code, Headers, Body, Req),
+    {set, Req2} ->
       loop(Req2, Loop);
     {'EXIT', _, normal} ->
       {ok, Req, Loop};
