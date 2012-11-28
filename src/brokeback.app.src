@@ -1,0 +1,14 @@
+{application, brokeback, [
+    {description, "misultin-like interface for cowboy"},
+    {vsn, "0.1"},
+    {modules, [
+        brokeback
+      ]},
+    {applications, [
+        kernel,
+        stdlib,
+        cowboy
+      ]},
+    {registered, []},
+    {env, []}
+  ]}.
