@@ -69,7 +69,7 @@ init([Options]) ->
           true
       end,
 
-      Dispatch = [{'_', [{[], brokeback_bridge, Loop}]}],
+      Dispatch = [{'_', [{['...'], brokeback_bridge, Loop}]}],
       ProtoOpts = [{dispatch, Dispatch}|AdditionalOptions] ++
         lists:foldl(fun (Key, Opts) -> proplists:delete(Key, Opts) end, Options, [ip, port, backlog, max_connections, ssl, loop, name]),
       AppStartResults = lists:keyfind(error, 1, [start_application(crypto), start_application(ranch), start_application(cowboy)]),
