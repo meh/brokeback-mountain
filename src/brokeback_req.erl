@@ -55,10 +55,10 @@ get(body, {brokeback_req, Pid}) ->
           {ok, Body, CowboyReq0} = cowboy_req:body(CowboyReq),
           set_request(Pid, CowboyReq0),
           set_proplist(Pid, [{body, Body}|PropList]),
-          binary_to_list(Body);
-        {_K, Value} -> binary_to_list(Value)
+          Body;
+        {_K, Value} -> Value
       end;
-    _ -> undefined
+    _ -> <<>>
   end;
 get(peer_addr, {brokeback_req, Pid}) ->
   {PA, _} = cowboy_req:peer_addr(get_request(Pid)),
