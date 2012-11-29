@@ -9,15 +9,20 @@ handle(Req, Loop) ->
   BReq = {brokeback_req, self()},
   process_flag(trap_exit, true),
   spawn_link(fun() -> Loop(BReq) end),
-  loop(Req, Loop).
+  loop(Req, Loop, []).
 
-loop(Req, Loop) ->
+loop(Req, Loop, PropList) ->
   receive
-    {get, Pid} ->
+    {get_request, Pid} ->
       Pid ! {request, Req},
-      loop(Req, Loop);
-    {set, Req2} ->
-      loop(Req2, Loop);
+      loop(Req, Loop, PropList);
+    {set_request, Req2} ->
+      loop(Req2, Loop, PropList);
+    {get_proplist, Pid} ->
+      Pid ! {proplist, PropList},
+      loop(Req, Loop, PropList);
+    {set_proplist, PropList2} ->
+      loop(Req, Loop, PropList2);
     {'EXIT', _, normal} ->
       {ok, Req, Loop};
     {'EXIT', _, Reason} ->
