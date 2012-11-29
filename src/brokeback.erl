@@ -9,12 +9,7 @@
 -define(SERVER, ?MODULE).
 
 start_link(Options) when is_list(Options) ->
-  case supervisor:start_link(?MODULE, [Options]) of
-    {ok, _} ->
-      ok;
-    Reason ->
-      {error, Reason}
-  end.
+  supervisor:start_link(?MODULE, [Options]).
 
 stop() ->
   stop(?SERVER).
