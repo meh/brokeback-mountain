@@ -3,22 +3,44 @@
 -export([respond/2, respond/3, respond/4, respond/5, ok/2, ok/3, ok/4, redirect/2, redirect/3]).
 -export([resource/2]).
 -export([get/2, get_variable/3, parse_qs/1]).
+-export([get_request/1]).
 
+get(transport, {brokeback_req, Pid}) ->
+  cowboy_req:get(transport, get_request(Pid));
 get(socket, {brokeback_req, Pid}) ->
   cowboy_req:get(socket, get_request(Pid));
-get(socket_mode, _Req) ->
-  undefined;
-get(peer_port, _Req) ->
-  undefined;
-get(peer_cert, _Req) ->
-  undefined;
-get(connection, _Req) ->
-  undefined;
+get(socket_mode, Req) ->
+  case get(transport, Req) of
+    ssl -> https;
+    _ -> http
+  end;
+get(peer_port, Req) ->
+  Transport = get(transport, Req),
+  case Transport:peername(get(socket, Req)) of
+    {ok, {_, Port}} -> Port;
+    _ -> undefined
+  end;
+get(peer_cert, Req) ->
+  case get(transport, Req) of
+    ssl ->
+      case ssl:peercert(get(socket, Req)) of
+        {ok, Cert} -> Cert;
+        _ -> undefined
+      end;
+    _ -> undefined
+  end;
+get(connection, Req) ->
+  case lists:keyfind(connection, 1, get(headers, Req)) of
+    false ->
+      keep_alive;
+    {_Key, Value} ->
+      connection(get(vsn, Req), Value)
+  end;
 get(content_length, {brokeback_req, Pid}) ->
   {Length, _} = cowboy_req:body_length(get_request(Pid)),
   Length;
-get(vsn, _Req) ->
-  undefined;
+get(vsn, {brokeback_req, Pid}) ->
+  cowboy_req:get(version, get_request(Pid));
 get(method, {brokeback_req, Pid}) ->
   PropList = get_proplist(Pid),
   case lists:keyfind(method, 1, PropList) of
@@ -43,8 +65,20 @@ get(uri, {brokeback_req, Pid} = Req) ->
 get(args, {brokeback_req, Pid}) ->
   {Args, _} = cowboy_req:qs(get_request(Pid)),
   binary_to_list(Args);
-get(headers, _Req) ->
-  undefined;
+get(headers, {brokeback_req, Pid}) ->
+  PropList = get_proplist(Pid),
+  case lists:keyfind(headers, 1, PropList) of
+    false ->
+      {Headers0, _} = cowboy_req:headers(get_request(Pid)),
+      Headers = lists:map(fun ({Key, Value}) ->
+            {list_to_atom(binary_to_list(Key)), binary_to_list(Value)};
+          (Unknown) ->
+            Unknown
+        end, Headers0),
+      set_proplist(Pid, [{headers, Headers}|PropList]),
+      Headers;
+    {_Key, Value} -> Value
+  end;
 get(body, {brokeback_req, Pid}) ->
   CowboyReq = get_request(Pid),
   case cowboy_req:has_body(CowboyReq) of
@@ -75,6 +109,22 @@ get(uri_unquoted, {brokeback_req, Pid} = Req) ->
       UriUnquoted;
     {_Key, Value} -> Value
   end.
+
+
+connection({1,1}, V) ->
+  case string:to_upper(V) of
+    "CLOSE" -> close;
+    _ -> keep_alive
+  end;
+
+connection({1,0}, V) ->
+  case string:to_upper(V) of
+    "KEEP-ALIVE" -> keep_alive;
+    _ -> close
+  end;
+
+connection(_Vsn, _V) -> close.
+
 
 get_variable(VarName, Variables, _ReqT) ->
   case lists:keyfind(VarName, 1, Variables) of
@@ -197,14 +247,14 @@ clean_uri(urldecode, Uri) ->
 clean_uri(_Unavailable, Uri) ->
   Uri.
 
+
 convert_headers(Headers) ->
-  convert_headers(Headers, []).
-convert_headers([], Headers) ->
-  Headers;
-convert_headers([{Name, Value}|Rest], Headers) ->
-  convert_headers(Rest, [{to_bin(Name), to_bin(Value)}|Headers]);
-convert_headers([U|Rest], Headers) ->
-  convert_headers(Rest, [U|Headers]).
+  lists:map(fun ({Name, Value}) ->
+        {to_bin(Name), to_bin(Value)};
+      (Unknown) ->
+        Unknown
+    end, Headers).
+
 
 to_bin(Bin) when is_binary(Bin) ->
   Bin;
