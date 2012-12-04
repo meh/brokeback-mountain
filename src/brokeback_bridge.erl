@@ -16,18 +16,23 @@ loop(Req, Loop, PropList) ->
     {get_request, Pid} ->
       Pid ! {request, Req},
       loop(Req, Loop, PropList);
+
     {set_request, Req2} ->
       loop(Req2, Loop, PropList);
+
     {get_proplist, Pid} ->
       Pid ! {proplist, PropList},
       loop(Req, Loop, PropList);
+
     {set_proplist, PropList2} ->
       loop(Req, Loop, PropList2);
+
     {'EXIT', _, normal} ->
-      Req2 = skip_body(Req),
+      Req2 = skip_body(Req, PropList),
       {ok, Req2, Loop};
+
     {'EXIT', _, Reason} ->
-      skip_body(Req),
+      skip_body(Req, PropList),
       {error, Reason, Loop}
   end.
 
@@ -35,14 +40,14 @@ skip_body(Req, PropList) ->
   case cowboy_req:has_body(Req) of
     {true, _} ->
       case lists:keyfind(body, 1, PropList) of
-        false ->
-          case cowboy_req:skip_body(Req) of
+        false -> case cowboy_req:skip_body(Req) of
             {ok, Req2} -> Req2;
-            _ -> Req
+            _          -> Req
           end;
-        _ ->
-          Req
+
+        _ -> Req
       end;
+
     _ -> Req
   end.
 

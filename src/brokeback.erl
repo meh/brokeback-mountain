@@ -3,7 +3,6 @@
 -vsn("0.1").
 
 -export([start_link/1, stop/0, stop/1]).
-
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
@@ -32,42 +31,44 @@ init([Options]) ->
     {loop, {error, undefined_loop}, fun is_function/1, loop_not_function},
     {name, ?SERVER, fun true/1, invalid_name}
   ],
-  OptionsVerified = lists:foldl(fun(OptionProp, Acc) -> [get_option(OptionProp, Options)|Acc] end, [], OptionProps),
+
+  OptionsVerified = lists:foldl(fun(OptionProp, Acc) ->
+          [get_option(OptionProp, Options) | Acc] end, [], OptionProps),
+
   case proplists:get_value(error, OptionsVerified) of
     undefined ->
-      % TransOpts
-      Ip = proplists:get_value(ip, OptionsVerified),
-      Port = proplists:get_value(port, OptionsVerified),
-      Backlog = proplists:get_value(backlog, OptionsVerified),
+      Ip             = proplists:get_value(ip, OptionsVerified),
+      Port           = proplists:get_value(port, OptionsVerified),
+      Backlog        = proplists:get_value(backlog, OptionsVerified),
       MaxConnections = proplists:get_value(max_connections, OptionsVerified),
-      TransOpts = [{ip, Ip}, {port, Port}, {backlog, Backlog}, {max_connections, MaxConnections}],
-      % ProtoOpts
-      SslOptions0 = proplists:get_value(ssl, OptionsVerified),
-      % brokeback options
+      TransOpts      = [{ip, Ip}, {port, Port}, {backlog, Backlog}, {max_connections, MaxConnections}],
+      SslOptions0    = proplists:get_value(ssl, OptionsVerified),
+
       Name = proplists:get_value(name, OptionsVerified),
       Loop = proplists:get_value(loop, OptionsVerified),
 
-      case SslOptions0 of
+      {Method, AdditionalOptions} = case SslOptions0 of
         false ->
-          Method = start_http,
           InetOpt = case Ip of
-            {_, _, _, _} ->
-              inet;
-            {_, _, _, _, _, _, _, _} ->
-              inet6
+            {_, _, _, _}             -> inet;
+            {_, _, _, _, _, _, _, _} -> inet6
           end,
-          AdditionalOptions = [InetOpt],
-          true;
+
+          {start_http, [InetOpt]};
+
         _ ->
-          Method = start_https,
-          AdditionalOptions = [{ssl_imp, new}|SslOptions0],
-          true
+          {start_https, [{ssl_imp, new} | SslOptions0]}
       end,
 
-      Dispatch = [{'_', [{['...'], brokeback_bridge, Loop}]}],
-      ProtoOpts = [{dispatch, Dispatch}|AdditionalOptions] ++
-        lists:foldl(fun (Key, Opts) -> proplists:delete(Key, Opts) end, Options, [ip, port, backlog, max_connections, ssl, loop, name]),
-      AppStartResults = lists:keyfind(error, 1, [start_application(crypto), start_application(ranch), start_application(cowboy)]),
+      Dispatch  = [{'_', [{['...'], brokeback_bridge, Loop}]}],
+      ProtoOpts = [{dispatch, Dispatch}|AdditionalOptions] ++ lists:foldl(fun(Key, Opts) ->
+              proplists:delete(Key, Opts) end, Options, [ip, port, backlog, max_connections, ssl, loop, name]),
+
+      AppStartResults = lists:keyfind(error, 1, [
+            start_application(crypto),
+            start_application(ranch),
+            start_application(cowboy)]),
+
       case AppStartResults of
         false ->
           case cowboy:Method(Name, MaxConnections, TransOpts, ProtoOpts) of
@@ -76,9 +77,11 @@ init([Options]) ->
             Reason ->
               {error, Reason}
           end;
+
         _ ->
           {error, AppStartResults}
       end;
+
     Reason ->
       {error, Reason}
   end.
@@ -88,70 +91,60 @@ get_option({OptionName, DefaultValue, CheckAndConvertFun, FailTypeError}, Option
   case proplists:get_value(OptionName, Options) of
     undefined ->
       case DefaultValue of
-        {error, Reason} ->
-          {error, Reason};
-        Value ->
-          {OptionName, Value}
+        {error, Reason} -> {error, Reason};
+        Value           -> {OptionName, Value}
       end;
+
     Value ->
       case CheckAndConvertFun(Value) of
-        false ->
-          {error, {FailTypeError, Value}};
-        true ->
-          {OptionName, Value};
-        OutValue ->
-          {OptionName, OutValue}
+        false    -> {error, {FailTypeError, Value}};
+        true     -> {OptionName, Value};
+        OutValue -> {OptionName, OutValue}
       end
   end.
 
 start_application(Application) ->
-  case lists:keyfind(Application, 1, application:which_applications()) of
-    false ->
-      case application:start(Application) of
-        ok ->
-          ok;
-        {error, Reason} ->
-          {error, Reason}
-      end;
-    _ ->
-      ok
+  case application:start(Application) of
+    ok                            -> ok;
+    {error, {already_started, _}} -> ok;
+    {error, Reason}               -> {error, Reason}
   end.
 
 % misultin functions
 
 % Checks and if necessary converts a string Ip to inet repr.
--spec check_and_convert_string_to_ip(Ip::string() | tuple()) -> inet:ip_address() | false.
+-spec check_and_convert_string_to_ip(Ip :: string() | tuple()) -> inet:ip_address() | false.
 check_and_convert_string_to_ip(Ip) when is_tuple(Ip) ->
   case size(Ip) of
     4 ->
-      % check for valid ipv4
-      LIp = [Num || Num <- tuple_to_list(Ip), Num >= 0, Num =< 255],
-      length(LIp) =:= 4 andalso Ip;
+      % check for valid ipv4 and return Ip if valid
+      length([Num || Num <- tuple_to_list(Ip), Num >= 0, Num =< 255]) =:= 4 andalso Ip;
+
     8 ->
-      % check for valid ipv6
-      LIp = [Num || Num <- tuple_to_list(Ip), Num >= 0, Num =< 16#FFFF],
-      length(LIp) =:= 8 andalso Ip;
+      % check for valid ipv6 and return Ip if valid
+      length([Num || Num <- tuple_to_list(Ip), Num >= 0, Num =< 16#FFFF]) =:= 8 andalso Ip;
+
     _ ->
       false
   end;
+
 check_and_convert_string_to_ip(Ip) ->
   case inet_parse:address(Ip) of
-    {error, _Reason} ->
-      false;
-    {ok, IpTuple} ->
-      IpTuple
+    {error, _Reason} -> false;
+    {ok, IpTuple}    -> IpTuple
   end.
 
 % Checks if all necessary Ssl Options have been specified
 %-spec check_ssl_options(SslOptions::gen_proplist()) -> boolean().
 check_ssl_options(SslOptions) ->
   Opts = [verify, fail_if_no_peer_cert, verify_fun, depth, certfile, keyfile, password, cacertfile, ciphers, reuse_sessions, reuse_session],
-  F = fun({Name, _Value}) ->
+  F    = fun({Name, _Value}) ->
     case lists:member(Name, Opts) of
       false -> false;
-      _ -> true
+      _     -> true
     end
   end,
+
   lists:all(F, SslOptions).
 
 % check if recbuf has been set
